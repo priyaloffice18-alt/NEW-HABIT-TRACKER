@@ -6,169 +6,232 @@ import os
 # -----------------------------
 # CONFIG
 # -----------------------------
-st.set_page_config(page_title="Smart Habit Tracker", layout="wide")
+st.set_page_config(page_title="Productivity App", layout="wide")
 
-FILE = "habits.csv"
+# -----------------------------
+# FILES
+# -----------------------------
+HABITS_FILE = "habits.csv"
+SLEEP_FILE = "sleep.csv"
+SCREEN_FILE = "screen.csv"
+
+# -----------------------------
+# SAFE LOAD FUNCTION
+# -----------------------------
+def load_csv(file, columns):
+    if os.path.exists(file):
+        return pd.read_csv(file)
+    return pd.DataFrame(columns=columns)
+
+def save_csv(df, file):
+    df.to_csv(file, index=False)
 
 # -----------------------------
 # LOAD DATA
 # -----------------------------
-def load_data():
-    if os.path.exists(FILE):
-        return pd.read_csv(FILE)
-    return pd.DataFrame(columns=[
-        "ID", "Activity", "Date", "Time", "Duration", "Completed"
-    ])
+habits = load_csv(HABITS_FILE, ["Activity", "Date", "Time", "Duration", "Completed"])
+sleep = load_csv(SLEEP_FILE, ["Date", "Sleep", "Wake"])
+screen = load_csv(SCREEN_FILE, ["App", "Date", "Hours"])
 
-def save_data(df):
-    df.to_csv(FILE, index=False)
+# -----------------------------
+# SESSION STATE
+# -----------------------------
+if "habits" not in st.session_state:
+    st.session_state.habits = habits
 
-df = load_data()
-
-if "df" not in st.session_state:
-    st.session_state.df = df
+# -----------------------------
+# SAFE TIME FUNCTION (IMPORTANT FIX)
+# -----------------------------
+def safe_time(val):
+    try:
+        return datetime.datetime.strptime(str(val), "%H:%M:%S").time()
+    except:
+        try:
+            return datetime.datetime.strptime(str(val), "%H:%M").time()
+        except:
+            return datetime.datetime.now().time()
 
 # -----------------------------
 # TITLE
 # -----------------------------
-st.title("🧠 Smart Habit Tracker (Add / Edit / Delete / Save)")
+st.title("📊 Productivity App (Habits + Sleep + Screen Time)")
 
-# -----------------------------
-# ADD NEW ACTIVITY
-# -----------------------------
-st.subheader("➕ Add New Activity")
+tab1, tab2, tab3 = st.tabs(["🧠 Habits", "😴 Sleep", "📱 Screen Time"])
 
-with st.form("add_form"):
-    col1, col2, col3 = st.columns(3)
+# =========================================================
+# HABITS
+# =========================================================
+with tab1:
+    st.header("🧠 Habit Tracker")
 
-    activity = col1.text_input("Activity Name")
-    date = col2.date_input("Date", datetime.date.today())
-    time = col3.time_input("Time")
+    # ---------------- ADD ----------------
+    with st.form("add_habit"):
+        col1, col2, col3 = st.columns(3)
 
-    duration = st.number_input("Duration (minutes)", 1, 600, 30)
+        activity = col1.text_input("Activity")
+        date = col2.date_input("Date", datetime.date.today())
+        time = col3.time_input("Time")
 
-    submit = st.form_submit_button("Add Activity")
+        duration = st.number_input("Duration (min)", 1, 600, 30)
 
-    if submit and activity:
-        new_id = len(st.session_state.df) + 1
+        submit = st.form_submit_button("Add Activity")
 
-        new_row = {
-            "ID": new_id,
-            "Activity": activity,
-            "Date": str(date),
-            "Time": str(time),
-            "Duration": duration,
-            "Completed": False
-        }
+        if submit and activity:
+            new_row = {
+                "Activity": activity,
+                "Date": str(date),
+                "Time": time.strftime("%H:%M:%S"),
+                "Duration": duration,
+                "Completed": False
+            }
 
-        st.session_state.df = pd.concat(
-            [st.session_state.df, pd.DataFrame([new_row])],
-            ignore_index=True
-        )
-
-        save_data(st.session_state.df)
-        st.success("Activity Added Successfully!")
-
-# -----------------------------
-# EDIT / DELETE SECTION
-# -----------------------------
-st.subheader("✏️ Manage Activities")
-
-df = st.session_state.df
-
-if not df.empty:
-
-    for i, row in df.iterrows():
-
-        st.markdown("---")
-
-        col1, col2, col3, col4 = st.columns([3,2,2,2])
-
-        with col1:
-            new_activity = st.text_input(
-                "Activity",
-                value=row["Activity"],
-                key=f"act_{i}"
+            st.session_state.habits = pd.concat(
+                [st.session_state.habits, pd.DataFrame([new_row])],
+                ignore_index=True
             )
 
-        with col2:
-            new_date = st.date_input(
-                "Date",
-                value=pd.to_datetime(row["Date"]),
-                key=f"date_{i}"
-            )
+            save_csv(st.session_state.habits, HABITS_FILE)
+            st.success("Added successfully!")
 
-        with col3:
-            new_time = st.time_input(
-                "Time",
-                value=datetime.datetime.strptime(row["Time"], "%H:%M:%S").time(),
-                key=f"time_{i}"
-            )
+    df = st.session_state.habits.copy()
 
-        with col4:
-            completed = st.checkbox(
-                "Done",
-                value=bool(row["Completed"]),
-                key=f"done_{i}"
-            )
+    if not df.empty:
 
-        colA, colB = st.columns(2)
+        df["Date"] = pd.to_datetime(df["Date"])
 
-        with colA:
-            if st.button("💾 Update", key=f"update_{i}"):
+        st.subheader("📅 Activities (Editable)")
 
-                st.session_state.df.at[i, "Activity"] = new_activity
-                st.session_state.df.at[i, "Date"] = str(new_date)
-                st.session_state.df.at[i, "Time"] = str(new_time)
-                st.session_state.df.at[i, "Completed"] = completed
+        for i, row in df.iterrows():
 
-                save_data(st.session_state.df)
-                st.success("Updated Successfully!")
+            col1, col2, col3, col4 = st.columns([3,2,2,2])
 
-        with colB:
-            if st.button("🗑 Delete", key=f"delete_{i}"):
+            with col1:
+                act = st.text_input("Activity", row["Activity"], key=f"act_{i}")
 
-                st.session_state.df = st.session_state.df.drop(i).reset_index(drop=True)
-                save_data(st.session_state.df)
-                st.warning("Deleted Successfully!")
-                st.rerun()
+            with col2:
+                d = st.date_input("Date", row["Date"].date(), key=f"date_{i}")
 
-# -----------------------------
-# VIEW ALL (SORTED)
-# -----------------------------
-st.subheader("📅 All Activities (Chronological)")
+            with col3:
+                t = st.time_input("Time", value=safe_time(row["Time"]), key=f"time_{i}")
 
-if not st.session_state.df.empty:
+            with col4:
+                done = st.checkbox("Done", value=bool(row["Completed"]), key=f"done_{i}")
 
-    view = st.session_state.df.copy()
-    view["DateTime"] = pd.to_datetime(view["Date"] + " " + view["Time"])
-    view = view.sort_values("DateTime")
+            c1, c2 = st.columns(2)
 
-    st.dataframe(view, use_container_width=True)
+            with c1:
+                if st.button("💾 Update", key=f"upd_{i}"):
 
-# -----------------------------
-# SIMPLE PROGRESS
-# -----------------------------
-st.subheader("📊 Progress Overview")
+                    st.session_state.habits.at[i, "Activity"] = act
+                    st.session_state.habits.at[i, "Date"] = str(d)
+                    st.session_state.habits.at[i, "Time"] = t.strftime("%H:%M:%S")
+                    st.session_state.habits.at[i, "Completed"] = done
 
-if not st.session_state.df.empty:
+                    save_csv(st.session_state.habits, HABITS_FILE)
+                    st.success("Updated!")
 
-    progress = st.session_state.df.copy()
-    progress["Completed"] = progress["Completed"].astype(int)
+            with c2:
+                if st.button("🗑 Delete", key=f"del_{i}"):
 
-    col1, col2 = st.columns(2)
+                    st.session_state.habits = st.session_state.habits.drop(i).reset_index(drop=True)
+                    save_csv(st.session_state.habits, HABITS_FILE)
+                    st.rerun()
 
-    with col1:
-        st.metric("Total Tasks", len(progress))
+        # ---------------- PROGRESS ----------------
+        st.subheader("📈 Progress")
 
-    with col2:
-        st.metric("Completed", progress["Completed"].sum())
+        progress = st.session_state.habits.copy()
 
-# -----------------------------
-# SAVE BUTTON (EXTRA SAFETY)
-# -----------------------------
-st.subheader("💾 Save Data")
+        if not progress.empty:
+            progress["Date"] = pd.to_datetime(progress["Date"])
+            progress["Completed"] = progress["Completed"].astype(int)
 
-if st.button("Save All Changes"):
-    save_data(st.session_state.df)
-    st.success("All data saved successfully!")
+            daily = progress.groupby("Date").agg(
+                total=("Completed", "count"),
+                done=("Completed", "sum")
+            ).reset_index()
+
+            daily["rate"] = daily["done"] / daily["total"]
+
+            st.line_chart(daily.set_index("Date")["rate"])
+
+# =========================================================
+# SLEEP
+# =========================================================
+with tab2:
+    st.header("😴 Sleep Tracker")
+
+    with st.form("sleep"):
+        col1, col2 = st.columns(2)
+
+        sleep_t = col1.time_input("Sleep Time")
+        wake_t = col2.time_input("Wake Time")
+
+        date = st.date_input("Date", datetime.date.today())
+
+        if st.form_submit_button("Save Sleep"):
+
+            new = {
+                "Date": str(date),
+                "Sleep": sleep_t.strftime("%H:%M:%S"),
+                "Wake": wake_t.strftime("%H:%M:%S")
+            }
+
+            sleep = pd.concat([sleep, pd.DataFrame([new])], ignore_index=True)
+            save_csv(sleep, SLEEP_FILE)
+            st.success("Saved!")
+
+    if not sleep.empty:
+
+        df = sleep.copy()
+        df["Date"] = pd.to_datetime(df["Date"])
+
+        df["Sleep"] = pd.to_datetime(df["Sleep"], format="%H:%M:%S")
+        df["Wake"] = pd.to_datetime(df["Wake"], format="%H:%M:%S")
+
+        df["Hours"] = (df["Wake"] - df["Sleep"]).dt.seconds / 3600
+
+        st.bar_chart(df.set_index("Date")["Hours"])
+
+# =========================================================
+# SCREEN TIME
+# =========================================================
+with tab3:
+    st.header("📱 Screen Time")
+
+    with st.form("screen"):
+        col1, col2 = st.columns(2)
+
+        app = col1.text_input("App")
+        hours = col2.number_input("Hours", 0.0, 24.0, 1.0)
+
+        date = st.date_input("Date", datetime.date.today())
+
+        if st.form_submit_button("Add") and app:
+
+            new = {
+                "App": app,
+                "Date": str(date),
+                "Hours": hours
+            }
+
+            screen = pd.concat([screen, pd.DataFrame([new])], ignore_index=True)
+            save_csv(screen, SCREEN_FILE)
+            st.success("Added!")
+
+    if not screen.empty:
+
+        df = screen.copy()
+        df["Date"] = pd.to_datetime(df["Date"])
+
+        st.subheader("App Usage")
+
+        app_usage = df.groupby("App")["Hours"].sum()
+
+        st.bar_chart(app_usage)
+
+        st.subheader("Daily Usage")
+
+        daily = df.groupby("Date")["Hours"].sum()
+
+        st.line_chart(daily)
